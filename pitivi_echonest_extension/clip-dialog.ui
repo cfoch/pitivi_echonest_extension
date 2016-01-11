@@ -86,7 +86,6 @@
                           <item id="full" translatable="yes">In entire song</item>
                           <item id="selection" translatable="yes">In selected range</item>
                         </items>
-                        <signal name="changed" handler="_matching_changed_cb" swapped="no"/>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -101,10 +100,10 @@
                         <property name="can_focus">False</property>
                         <property name="active">0</property>
                         <items>
-                          <item id="select" translatable="yes">select</item>
-                          <item id="remove" translatable="yes">remove</item>
+                          <item id="exactly" translatable="yes">select exactly</item>
+                          <item id="remove" translatable="yes">remove from selection</item>
+                          <item id="add" translatable="yes">add to selection</item>
                         </items>
-                        <signal name="changed" handler="_matching_changed_cb" swapped="no"/>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -134,7 +133,7 @@
                         <property name="climb_rate">1</property>
                         <property name="numeric">True</property>
                         <property name="value">16</property>
-                        <signal name="value-changed" handler="_matching_changed_cb" swapped="no"/>
+                        <signal name="value-changed" handler="_match_spin_changed_cb" swapped="no"/>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -163,12 +162,25 @@
                         <items>
                           <item id="even" translatable="yes">evenly</item>
                         </items>
-                        <signal name="changed" handler="_matching_changed_cb" swapped="no"/>
                       </object>
                       <packing>
                         <property name="expand">False</property>
                         <property name="fill">True</property>
                         <property name="position">5</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="button5">
+                        <property name="label" translatable="yes">select</property>
+                        <property name="visible">True</property>
+                        <property name="can_focus">True</property>
+                        <property name="receives_default">True</property>
+                        <signal name="clicked" handler="_match_select_clicked_cb" swapped="no"/>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">True</property>
+                        <property name="position">6</property>
                       </packing>
                     </child>
                   </object>

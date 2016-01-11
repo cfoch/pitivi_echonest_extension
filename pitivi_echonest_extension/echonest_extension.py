@@ -4,6 +4,7 @@ import cairo
 
 from gi.repository import Gtk, Gdk, GLib, Gst, GObject
 from pyechonest import track as echotrack
+from ordered_set import OrderedSet
 
 from .clap_mixer import ClapMixer
 
@@ -43,7 +44,7 @@ class AudioPreviewer:
         self.__track = track
         self.__surface = None
         self.__markers = []
-        self.__selected_section = None
+        self.selected_section = None
         self.position = 0.0
 
         darea.connect('draw', self.draw_cb)
@@ -86,10 +87,10 @@ class AudioPreviewer:
 
         context.stroke()
 
-        if self.__selected_section is not None:
+        if self.selected_section is not None:
             context.set_source_rgba(0.0, 0.0, 1.0, 0.5)
-            x1 = int(self.__selected_section[0] * width)
-            x2 = int(self.__selected_section[1] * width)
+            x1 = int(self.selected_section[0] * width)
+            x2 = int(self.selected_section[1] * width)
             for x in range(x1, x2):
                 context.move_to(x, 0)
                 context.line_to(x, height)
@@ -99,7 +100,7 @@ class AudioPreviewer:
         self.__markers = markers
 
     def set_selected_section(self, startpos, endpos):
-        self.__selected_section = (startpos, endpos)
+        self.selected_section = (startpos, endpos)
 
 class EchonestExtension(BaseExtension):
     EXTENSION_NAME = 'echonest-extension'
@@ -205,7 +206,7 @@ class EchonestExtension(BaseExtension):
                 self.__mixer_position_cb, track))
 
         step = int(self.__current_builder.get_object('step-spinner').get_value())
-        self.__selected_beats = set([b['start'] for b in track.beats[0::step]])
+        self.__selected_beats = OrderedSet([b['start'] for b in track.beats[0::step]])
 
         self.__compute_markers()
 
@@ -227,24 +228,43 @@ class EchonestExtension(BaseExtension):
         distribution = b.get_object('distribution-combo').get_active_id()
         step = int(b.get_object('step-spinner').get_value())
 
-        if step == 1:
-            b.get_object('beat_label').set_text("beat")
-        else:
-            b.get_object('beat_label').set_text("beats")
-
         if range_ == 'full':
-            selected_beats = t.beats[0::step]
-            markers = [b['start'] / t.duration for b in selected_beats]
-            claps = [b['start'] * Gst.SECOND for b in selected_beats]
+            all_beats = [b['start'] for b in t.beats]
+        elif self.__audio_previewer.selected_section:
+            s = self.__audio_previewer.selected_section
+            nb_beats = len(t.beats)
+            start = int(s[0] * nb_beats)
+            end = int(s[1] * nb_beats)
+            all_beats = [b['start'] for b in t.beats[start:end]]
         else:
-            markers = []
-            claps = []
+            all_beats = []
+
+        selected_beats = all_beats[0::step]
+
+        if selection_type == 'exactly':
+            self.__selected_beats -= all_beats
+            self.__selected_beats.update(selected_beats)
+        elif selection_type == 'add':
+            self.__selected_beats.update(selected_beats)
+        else:
+            self.__selected_beats -= selected_beats
+
+        markers = [b / t.duration for b in self.__selected_beats]
+        claps = [b * Gst.SECOND for b in self.__selected_beats]
 
         self.__clap_mixer.set_positions(claps)
         self.__audio_previewer.set_markers(markers)
         self.__audio_previewer.darea.queue_draw()
 
-    def _matching_changed_cb(self, unused_widget):
+    def _match_spin_changed_cb(self, spinner):
+        step = int(self.__current_builder.get_object('step-spinner').get_value())
+
+        if step == 1:
+            self.__current_builder.get_object('beat_label').set_text("beat")
+        else:
+            self.__current_builder.get_object('beat_label').set_text("beats")
+
+    def _match_select_clicked_cb(self, unused_widget):
         self.__compute_markers()
 
     def _back_clicked_cb(self, unused_widget):
