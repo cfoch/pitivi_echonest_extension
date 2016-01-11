@@ -1,4 +1,4 @@
-import os
+import os, sys
 
 from gi.repository import Gst, GES, GLib
 Gst.init(None)
@@ -49,7 +49,6 @@ class ClapMixer(object):
                 Gst.State.PLAYING):
             self.pipeline.commit_timeline()
 
-
     def set_positions(self, positions):
        self.__positions = positions
        if self.__clap_asset:
@@ -94,7 +93,7 @@ if __name__=='__main__':
 
     check_requirements()
     cm = ClapMixer()
-    asset = GES.UriClipAsset.request_sync('file:///home/meh/Music/test/around.mp3')
+    asset = GES.UriClipAsset.request_sync(sys.argv[1])
     cm.set_asset(asset)
     loop = GLib.MainLoop()
 
