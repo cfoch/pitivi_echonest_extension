@@ -38,6 +38,7 @@ class AudioPreviewer:
         with open(filename, "rb") as samples:
             self.__peaks = pickle.load(samples)
 
+        self.__nb_peaks = len(self.__peaks)
         self.__max_peak = max(self.__peaks)
         self.__track = track
         self.__surface = None
@@ -52,16 +53,16 @@ class AudioPreviewer:
         width = int(darea.get_allocation().width)
         height = int(darea.get_allocation().height)
 
+        playhead_index = int(self.position * self.__nb_peaks)
+
         self.__surface = renderer.fill_surface(self.__peaks[:],
                                              width,
                                              height,
-                                             self.__max_peak)
-
-            
+                                             self.__max_peak,
+                                             playhead_index)
 
         context.set_operator(cairo.OPERATOR_OVER)
         context.set_source_surface(self.__surface, 0, 0)
-
 
         context.paint()
 
@@ -228,7 +229,7 @@ class EchonestExtension(BaseExtension):
         self.__compute_markers()
 
     def _back_clicked_cb(self, unused_widget):
-        self.__clap_mixer.pipeline.seek_simple(0)
+        self.__clap_mixer.pipeline.simple_seek(0)
 
     def _end_clicked_cb(self, unused_widget):
         #FIXME: do we even want that ?
