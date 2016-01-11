@@ -2,8 +2,10 @@ import os, threading
 import pickle
 import cairo
 
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, Gst
 from pyechonest import track as echotrack
+
+from .clap_mixer import ClapMixer
 
 from pitivi.extensions import BaseExtension
 from pitivi.medialibrary import COL_URI
@@ -15,7 +17,7 @@ try:
 except ImportError:
     import renderer
 
-here = os.path.dirname(__file__)
+here = os.path.abspath(os.path.dirname(__file__))
 
 METADATA_BLACKLIST = ("pyechostring", "codestring", "synchstring",
         "analysis_url", "rhythmstring", "echoprintstring", "meta",
@@ -84,7 +86,9 @@ class EchonestExtension(BaseExtension):
         self.__analysis_handler_id = 0
         self.__audio_previewer = None
         self.__current_builder = None
-        self.__current_track = None
+        self.__clap_mixer = ClapMixer()
+        self.__clap_mixer.pipeline.connect("state-change",
+                self.__mixer_state_changed_cb)
 
     def setup(self):
         self.app.gui.medialibrary.connect('populating-asset-menu',
@@ -153,7 +157,7 @@ class EchonestExtension(BaseExtension):
 
         listbox.show_all()
 
-    def __prepare_beat_matcher(self, track, filename):
+    def __prepare_beat_matcher(self, track, asset, filename):
         darea = self.__current_builder.get_object('waveform_area')
         self.__audio_previewer = AudioPreviewer(track, darea, filename)
         darea.get_style_context().add_class("AudioUriSource")
@@ -164,19 +168,20 @@ class EchonestExtension(BaseExtension):
                 'step-spinner'):
             self.__current_builder.get_object(id_).set_sensitive(True)
 
-        self.__compute_markers()
+        self.__clap_mixer.set_asset(asset)
 
-    def __display_track_analysis(self, track, builder, filename):
+        self.__compute_markers(track)
+
+    def __display_track_analysis(self, track, builder, asset, filename):
         if builder != self.__current_builder:
             return
 
-        self.__current_track = track
         self.__fill_metadata_list(track)
-        self.__prepare_beat_matcher(track, filename)
+        self.__prepare_beat_matcher(track, asset, filename)
 
-    def __compute_markers(self):
+    def __compute_markers(self, track):
         b = self.__current_builder
-        t = self.__current_track
+        t = track
 
         range_ = b.get_object('range-combo').get_active_id()
         selection_type = b.get_object('select-type-combo').get_active_id()
@@ -190,7 +195,7 @@ class EchonestExtension(BaseExtension):
 
         if range_ == 'full':
             markers = [m['start'] / t.duration for m in
-                    self.__current_track.beats[0::step]]
+                    track.beats[0::step]]
         else:
             markers = []
 
@@ -200,8 +205,23 @@ class EchonestExtension(BaseExtension):
     def _matching_changed_cb(self, unused_widget):
         self.__compute_markers()
 
+    def _back_clicked_cb(self, unused_widget):
+        self.__clap_mixer.pipeline.seek_simple(0)
+
+    def _end_clicked_cb(self, unused_widget):
+        #FIXME: do we even want that ?
+        pass
+
+    def _play_pause_clicked_cb(self, button):
+        state = self.__clap_mixer.pipeline.getState()
+        if state == Gst.State.PLAYING:
+            self.__clap_mixer.pipeline.pause()
+        else:
+            self.__clap_mixer.pipeline.play()
+
     def __clip_dialog_cb(self, widget, clip):
         clip = clip.bClip
+        asset = clip.get_asset()
         filename = GLib.filename_from_uri(clip.props.uri)[0]
 
         self.__current_builder = Gtk.Builder()
@@ -212,10 +232,11 @@ class EchonestExtension(BaseExtension):
         dialog.set_transient_for(self.app.gui)
 
         self.__analyse_track(filename, self.__display_track_analysis,
-                (self.__current_builder, filename,))
+                (self.__current_builder, asset, filename,))
 
         res = dialog.run()
 
+        #self.__clap_mixer.reset()
         self.__current_builder = None
 
         # We gud
@@ -229,6 +250,17 @@ class EchonestExtension(BaseExtension):
 
     def __run_analysis_clicked_cb(self, widget, asset_uri):
         self.__analyse_track(GLib.filename_from_uri(asset_uri)[0], None, None)
+
+    def __mixer_state_changed_cb(self, unused_pipeline, new, prev):
+        if not self.__current_builder:
+            return
+
+        image = self.__current_builder.get_object('play-pause-image')
+        if new == Gst.State.PLAYING:
+            image.set_from_icon_name('media-playback-pause', Gtk.IconSize.BUTTON)
+        elif new == Gst.State.PAUSED:
+            image.set_from_icon_name('media-playback-start', Gtk.IconSize.BUTTON)
+
 
 def get_extension_classes():
     return [EchonestExtension]
