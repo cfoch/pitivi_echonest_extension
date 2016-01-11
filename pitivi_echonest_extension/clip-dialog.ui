@@ -46,35 +46,45 @@
             <property name="visible">True</property>
             <property name="can_focus">True</property>
             <child>
-              <object class="GtkGrid" id="grid1">
+              <object class="GtkBox" id="box1">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
+                <property name="orientation">vertical</property>
+                <property name="homogeneous">True</property>
                 <child>
-                  <placeholder/>
+                  <object class="GtkDrawingArea" id="waveform_area">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                  </object>
+                  <packing>
+                    <property name="expand">True</property>
+                    <property name="fill">True</property>
+                    <property name="position">0</property>
+                  </packing>
                 </child>
                 <child>
-                  <placeholder/>
+                  <object class="GtkLabel" id="label3">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="label" translatable="yes">label</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">1</property>
+                  </packing>
                 </child>
                 <child>
-                  <placeholder/>
-                </child>
-                <child>
-                  <placeholder/>
-                </child>
-                <child>
-                  <placeholder/>
-                </child>
-                <child>
-                  <placeholder/>
-                </child>
-                <child>
-                  <placeholder/>
-                </child>
-                <child>
-                  <placeholder/>
-                </child>
-                <child>
-                  <placeholder/>
+                  <object class="GtkLabel" id="label4">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="label" translatable="yes">label</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">2</property>
+                  </packing>
                 </child>
               </object>
             </child>
@@ -109,6 +119,7 @@
               </object>
               <packing>
                 <property name="position">1</property>
+                <property name="tab_expand">True</property>
               </packing>
             </child>
             <child type="tab">

@@ -1,10 +1,21 @@
 import os, threading
+import pickle
+import cairo
 
-from gi.repository import Gtk, GLib
+from gi.repository import Gtk, Gdk, GLib
 from pyechonest import track
 
 from pitivi.extensions import BaseExtension
 from pitivi.medialibrary import COL_URI
+from pitivi.utils.misc import hash_file
+from pitivi.settings import get_dir, xdg_cache_home
+
+try:
+    from pitivi.timeline import renderer
+except ImportError:
+    import renderer
+
+print (renderer)
 
 here = os.path.dirname(__file__)
 
@@ -15,6 +26,34 @@ METADATA_BLACKLIST = ("pyechostring", "codestring", "synchstring",
         "rhythm_version", "sample_md5", "status", "synch_version")
 
 LIST_TYPED_METADATA = ("segments", "tatums", "beats", "bars", "sections")
+
+class AudioPreviewer:
+    def __init__(self, darea, clip_filename):
+        filename = hash_file(clip_filename) + ".wave"
+        cache_dir = get_dir(os.path.join(xdg_cache_home(), "waves"))
+        filename = os.path.join(cache_dir, filename)
+        with open(filename, "rb") as samples:
+            self.peaks = pickle.load(samples)
+
+        self.__max_peak = max(self.peaks)
+
+        self._surface_x = 0
+        self.our_surface = None
+        darea.connect('draw', self.draw_cb)
+
+    def draw_cb(self, darea, context):
+        rect = Gdk.cairo_get_clip_rectangle(context)
+        clipped_rect = rect[1]
+
+        self.our_surface = renderer.fill_surface(self.peaks[:],
+                                             int(darea.get_allocation().width),
+                                             int(darea.get_allocation().height),
+                                             self.__max_peak)
+
+
+        context.set_operator(cairo.OPERATOR_OVER)
+        context.set_source_surface(self.our_surface, self._surface_x, 0)
+        context.paint()
 
 class EchonestExtension(BaseExtension):
     EXTENSION_NAME = 'echonest-extension'
@@ -70,6 +109,11 @@ class EchonestExtension(BaseExtension):
 
         listbox.show_all()
 
+    def __prepare_beat_matcher(self, builder, filename):
+        darea = builder.get_object('waveform_area')
+        self.audio_previewer = AudioPreviewer(darea, filename)
+        darea.get_style_context().add_class("AudioUriSource")
+
     def __clip_dialog_cb(self, widget, clip):
         clip = clip.bClip
         filename = GLib.filename_from_uri(clip.props.uri)[0]
@@ -86,6 +130,7 @@ class EchonestExtension(BaseExtension):
         dialog = builder.get_object('clip-dialog')
         dialog.set_transient_for(self.app.gui)
         self.__fill_metadata_list(builder, track)
+        self.__prepare_beat_matcher(builder, filename)
         res = dialog.run()
 
         # We gud
