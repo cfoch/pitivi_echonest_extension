@@ -50,7 +50,6 @@ class AudioPreviewer:
                                              int(darea.get_allocation().height),
                                              self.__max_peak)
 
-
         context.set_operator(cairo.OPERATOR_OVER)
         context.set_source_surface(self.our_surface, self._surface_x, 0)
         context.paint()
@@ -63,22 +62,43 @@ class EchonestExtension(BaseExtension):
         self.__asset_menu_item = None
         self.__analysis_handler_id = 0
 
-        self.analysed_tracks = {}
-
     def setup(self):
         self.app.gui.medialibrary.connect('populating-asset-menu',
                 self.__add_asset_menu_item_cb)
         self.app.gui.timeline_ui.timeline.connect('populating-clip-menu',
                 self.__add_clip_menu_item_cb)
 
-    def analysis_worker(self, filename):
-        pytrack = track.track_from_filename(filename)
-        pytrack.get_analysis()
-        self.analysed_tracks[filename] = pytrack
-        return pytrack
+    def __load_from_cache(self, filename):
+        filename = hash_file(filename) + '.analysis'
+        cache_dir = get_dir(os.path.join(xdg_cache_home(), "echonest"))
+        filename = os.path.join(cache_dir, filename)
+        try:
+            with open(filename, 'rb') as f:
+                print ("I'm loading from cache !")
+                return pickle.load(f)
+        except IOError:
+            return None
 
-    def __analyse_track(self, filename):
-        t = threading.Thread(target=self.analysis_worker, args=(filename,))
+    def __save_to_cache(self, filename, track):
+        filename = hash_file(filename) + '.analysis'
+        cache_dir = get_dir(os.path.join(xdg_cache_home(), "echonest"))
+        filename = os.path.join(cache_dir, filename)
+        with open(filename, 'wb') as f:
+            pickle.dump(track, f)
+
+    def analysis_worker(self, filename, callback, user_data):
+        pytrack = self.__load_from_cache(filename)
+        if not pytrack:
+            pytrack = track.track_from_filename(filename)
+            pytrack.get_analysis()
+            self.__save_to_cache(filename, pytrack)
+
+        if (callback):
+            callback(pytrack, *user_data)
+
+    def __analyse_track(self, filename, callback, user_data):
+        t = threading.Thread(target=self.analysis_worker, args=(filename,
+            callback, user_data))
         t.daemon = True
         t.start()
 
@@ -114,23 +134,23 @@ class EchonestExtension(BaseExtension):
         self.audio_previewer = AudioPreviewer(darea, filename)
         darea.get_style_context().add_class("AudioUriSource")
 
+    def __display_track_analysis(self, track, builder, filename):
+        self.__fill_metadata_list(builder, track)
+        self.__prepare_beat_matcher(builder, filename)
+
     def __clip_dialog_cb(self, widget, clip):
         clip = clip.bClip
         filename = GLib.filename_from_uri(clip.props.uri)[0]
-        track = self.analysed_tracks.get(filename)
-
-        if not track:
-            print ("Analysing sync")
-            track = self.analysis_worker(filename)
-
 
         builder = Gtk.Builder()
         builder.add_from_file(os.path.join(here, 'clip-dialog.ui'))
         builder.connect_signals(self)
         dialog = builder.get_object('clip-dialog')
         dialog.set_transient_for(self.app.gui)
-        self.__fill_metadata_list(builder, track)
-        self.__prepare_beat_matcher(builder, filename)
+
+        self.__analyse_track(filename, self.__display_track_analysis,
+                (builder, filename))
+
         res = dialog.run()
 
         # We gud
@@ -143,7 +163,7 @@ class EchonestExtension(BaseExtension):
         menu.append(menu_item)
 
     def __run_analysis_clicked_cb(self, widget, asset_uri):
-        self.__analyse_track(GLib.filename_from_uri(asset_uri)[0])
+        self.__analyse_track(GLib.filename_from_uri(asset_uri)[0], None, None)
 
 def get_extension_classes():
     return [EchonestExtension]
