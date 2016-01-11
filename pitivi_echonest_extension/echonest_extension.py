@@ -2,7 +2,7 @@ import os, threading
 import pickle
 import cairo
 
-from gi.repository import Gtk, Gdk, GLib, Gst
+from gi.repository import Gtk, Gdk, GLib, Gst, GObject
 from pyechonest import track as echotrack
 
 from .clap_mixer import ClapMixer
@@ -42,6 +42,7 @@ class AudioPreviewer:
         self.__track = track
         self.__surface = None
         self.__markers = []
+        self.position = 0.0
 
         darea.connect('draw', self.draw_cb)
 
@@ -74,6 +75,15 @@ class AudioPreviewer:
 
         context.stroke()
 
+        context.set_source_rgb(1.0, 0.0, 0.0)
+        context.set_line_width(0.5)
+
+        x = self.position * width
+        context.move_to(x, 0)
+        context.line_to(x, height)
+
+        context.stroke()
+
     def set_markers(self, markers):
         self.__markers = markers
 
@@ -87,8 +97,8 @@ class EchonestExtension(BaseExtension):
         self.__audio_previewer = None
         self.__current_builder = None
         self.__clap_mixer = ClapMixer()
-        self.__clap_mixer.pipeline.connect("state-change",
-                self.__mixer_state_changed_cb)
+        self.__clap_mixer_handlers = []
+        self.__current_track = None
 
     def setup(self):
         self.app.gui.medialibrary.connect('populating-asset-menu',
@@ -169,19 +179,28 @@ class EchonestExtension(BaseExtension):
             self.__current_builder.get_object(id_).set_sensitive(True)
 
         self.__clap_mixer.set_asset(asset)
+        self.__clap_mixer_handlers.append(
+                self.__clap_mixer.pipeline.connect("state-change",
+                self.__mixer_state_changed_cb))
 
-        self.__compute_markers(track)
+        self.__clap_mixer.pipeline.activatePositionListener(50)
+        self.__clap_mixer_handlers.append(self.__clap_mixer.pipeline.connect("position",
+                self.__mixer_position_cb, track))
+
+        self.__compute_markers()
 
     def __display_track_analysis(self, track, builder, asset, filename):
         if builder != self.__current_builder:
             return
 
+        self.__current_track = track
         self.__fill_metadata_list(track)
         self.__prepare_beat_matcher(track, asset, filename)
 
-    def __compute_markers(self, track):
+    def __compute_markers(self):
         b = self.__current_builder
-        t = track
+        t = self.__current_track
+        claps = []
 
         range_ = b.get_object('range-combo').get_active_id()
         selection_type = b.get_object('select-type-combo').get_active_id()
@@ -194,11 +213,14 @@ class EchonestExtension(BaseExtension):
             b.get_object('beat_label').set_text("beats")
 
         if range_ == 'full':
-            markers = [m['start'] / t.duration for m in
-                    track.beats[0::step]]
+            selected_beats = t.beats[0::step]
+            markers = [b['start'] / t.duration for b in selected_beats]
+            claps = [b['start'] * Gst.SECOND for b in selected_beats]
         else:
             markers = []
+            claps = []
 
+        self.__clap_mixer.set_positions(claps)
         self.__audio_previewer.set_markers(markers)
         self.__audio_previewer.darea.queue_draw()
 
@@ -236,7 +258,12 @@ class EchonestExtension(BaseExtension):
 
         res = dialog.run()
 
-        #self.__clap_mixer.reset()
+        for handler_id in self.__clap_mixer_handlers:
+            GObject.signal_handler_disconnect(self.__clap_mixer.pipeline,
+                    handler_id)
+        self.__clap_mixer_handlers = []
+
+        self.__clap_mixer.reset()
         self.__current_builder = None
 
         # We gud
@@ -261,6 +288,11 @@ class EchonestExtension(BaseExtension):
         elif new == Gst.State.PAUSED:
             image.set_from_icon_name('media-playback-start', Gtk.IconSize.BUTTON)
 
+    def __mixer_position_cb(self, unused_pipeline, position, track):
+        if self.__audio_previewer:
+            position_ratio = (position / Gst.SECOND) / track.duration
+            self.__audio_previewer.position = position_ratio
+            self.__audio_previewer.darea.queue_draw()
 
 def get_extension_classes():
     return [EchonestExtension]

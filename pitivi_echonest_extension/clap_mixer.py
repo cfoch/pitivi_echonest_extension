@@ -30,8 +30,6 @@ class ClapMixer(object):
         self.__asset_layer = None
 
         self.reset()
-        # nle isn't thread-safe below PAUSED
-        #self.pipeline.get_state(timeout=Gst.CLOCK_TIME_NONE)
 
         GES.Asset.request_async(GES.UriClip, CLAP_ASSET,
                 None, self.__clap_discovered_cb, None)
@@ -59,6 +57,8 @@ class ClapMixer(object):
 
     def reset(self):
         self.pipeline.pause()
+        # nle isn't thread-safe below PAUSED
+        self.pipeline.get_state(timeout=Gst.CLOCK_TIME_NONE)
         self.pipeline.simple_seek(0)
         self.set_asset(None)
         self.set_positions(None)
