@@ -59,6 +59,9 @@
                   <object class="GtkDrawingArea" id="waveform_area">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
+                    <property name="events">GDK_BUTTON1_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_STRUCTURE_MASK</property>
+                    <signal name="button-release-event" handler="_waveform_area_button_release_cb" swapped="no"/>
+                    <signal name="motion-notify-event" handler="_waveform_area_motion_notify_cb" swapped="no"/>
                   </object>
                   <packing>
                     <property name="expand">True</property>
@@ -98,7 +101,8 @@
                         <property name="can_focus">False</property>
                         <property name="active">0</property>
                         <items>
-                          <item id="exactly" translatable="yes">select exactly</item>
+                          <item id="select" translatable="yes">select</item>
+                          <item id="remove" translatable="yes">remove</item>
                         </items>
                         <signal name="changed" handler="_matching_changed_cb" swapped="no"/>
                       </object>

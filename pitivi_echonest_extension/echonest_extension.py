@@ -43,6 +43,7 @@ class AudioPreviewer:
         self.__track = track
         self.__surface = None
         self.__markers = []
+        self.__selected_section = None
         self.position = 0.0
 
         darea.connect('draw', self.draw_cb)
@@ -85,8 +86,20 @@ class AudioPreviewer:
 
         context.stroke()
 
+        if self.__selected_section is not None:
+            context.set_source_rgba(0.0, 0.0, 1.0, 0.5)
+            x1 = int(self.__selected_section[0] * width)
+            x2 = int(self.__selected_section[1] * width)
+            for x in range(x1, x2):
+                context.move_to(x, 0)
+                context.line_to(x, height)
+                context.stroke()
+
     def set_markers(self, markers):
         self.__markers = markers
+
+    def set_selected_section(self, startpos, endpos):
+        self.__selected_section = (startpos, endpos)
 
 class EchonestExtension(BaseExtension):
     EXTENSION_NAME = 'echonest-extension'
@@ -100,6 +113,11 @@ class EchonestExtension(BaseExtension):
         self.__clap_mixer = ClapMixer()
         self.__clap_mixer_handlers = []
         self.__current_track = None
+
+        self.__button1_motion_start = None
+        self.__button2_motion_end = None
+
+        self.__selected_beats = None
 
     def setup(self):
         self.app.gui.medialibrary.connect('populating-asset-menu',
@@ -172,8 +190,6 @@ class EchonestExtension(BaseExtension):
         darea = self.__current_builder.get_object('waveform_area')
         self.__audio_previewer = AudioPreviewer(track, darea, filename)
         darea.get_style_context().add_class("AudioUriSource")
-        markers = [beat['start'] / track.duration for beat in track.beats]
-        self.__audio_previewer.set_markers(markers)
 
         for id_ in ('range-combo', 'select-type-combo', 'distribution-combo',
                 'step-spinner'):
@@ -187,6 +203,9 @@ class EchonestExtension(BaseExtension):
         self.__clap_mixer.pipeline.activatePositionListener(50)
         self.__clap_mixer_handlers.append(self.__clap_mixer.pipeline.connect("position",
                 self.__mixer_position_cb, track))
+
+        step = int(self.__current_builder.get_object('step-spinner').get_value())
+        self.__selected_beats = set([b['start'] for b in track.beats[0::step]])
 
         self.__compute_markers()
 
@@ -242,6 +261,34 @@ class EchonestExtension(BaseExtension):
         else:
             self.__clap_mixer.pipeline.play()
 
+    def _waveform_area_motion_notify_cb(self, darea, event):
+        width = darea.get_allocation().width
+        if self.__button1_motion_start is None:
+            self.__button1_motion_start = event.x / width
+
+        self.__button1_motion_end = event.x / width
+        self.__select_waveform_section()
+
+    def __select_waveform_section(self):
+        startpos = max(0.0, min(self.__button1_motion_start,
+            self.__button1_motion_end))
+        endpos = min(1.0, max(self.__button1_motion_start,
+            self.__button1_motion_end))
+        self.__audio_previewer.set_selected_section(startpos, endpos)
+        self.__audio_previewer.darea.queue_draw()
+
+    def _waveform_area_button_release_cb(self, darea, event):
+        position = event.x / darea.get_allocation().width
+
+        if self.__button1_motion_start is None:
+            nsposition = self.__current_track.duration * position * Gst.SECOND
+            self.__clap_mixer.pipeline.simple_seek(int(nsposition))
+        else:
+            self.__select_waveform_section()
+
+        self.__button1_motion_start = None
+        self.__button1_motion_end = None
+
     def __clip_dialog_cb(self, widget, clip):
         clip = clip.bClip
         asset = clip.get_asset()
@@ -266,6 +313,7 @@ class EchonestExtension(BaseExtension):
 
         self.__clap_mixer.reset()
         self.__current_builder = None
+        self.__selected_beats = None
 
         # We gud
         dialog.destroy()
