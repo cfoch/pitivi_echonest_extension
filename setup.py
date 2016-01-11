@@ -13,6 +13,5 @@ setup(
 
     entry_points = {'pitivi.extensions': 'get_extension_classes = pitivi_echonest_extension.echonest_extension:get_extension_classes'},
     install_requires = [
-        'pyechonest',
     ],
 )
