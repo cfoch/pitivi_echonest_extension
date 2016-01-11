@@ -3,7 +3,7 @@ import pickle
 import cairo
 
 from gi.repository import Gtk, Gdk, GLib
-from pyechonest import track
+from pyechonest import track as echotrack
 
 from pitivi.extensions import BaseExtension
 from pitivi.medialibrary import COL_URI
@@ -14,8 +14,6 @@ try:
     from pitivi.timeline import renderer
 except ImportError:
     import renderer
-
-print (renderer)
 
 here = os.path.dirname(__file__)
 
@@ -28,31 +26,54 @@ METADATA_BLACKLIST = ("pyechostring", "codestring", "synchstring",
 LIST_TYPED_METADATA = ("segments", "tatums", "beats", "bars", "sections")
 
 class AudioPreviewer:
-    def __init__(self, darea, clip_filename):
+    def __init__(self, track, darea, clip_filename):
         filename = hash_file(clip_filename) + ".wave"
         cache_dir = get_dir(os.path.join(xdg_cache_home(), "waves"))
         filename = os.path.join(cache_dir, filename)
+
+        self.darea = darea
+
         with open(filename, "rb") as samples:
-            self.peaks = pickle.load(samples)
+            self.__peaks = pickle.load(samples)
 
-        self.__max_peak = max(self.peaks)
+        self.__max_peak = max(self.__peaks)
+        self.__track = track
+        self.__surface = None
+        self.__markers = []
 
-        self._surface_x = 0
-        self.our_surface = None
         darea.connect('draw', self.draw_cb)
 
     def draw_cb(self, darea, context):
         rect = Gdk.cairo_get_clip_rectangle(context)
         clipped_rect = rect[1]
+        width = int(darea.get_allocation().width)
+        height = int(darea.get_allocation().height)
 
-        self.our_surface = renderer.fill_surface(self.peaks[:],
-                                             int(darea.get_allocation().width),
-                                             int(darea.get_allocation().height),
+        self.__surface = renderer.fill_surface(self.__peaks[:],
+                                             width,
+                                             height,
                                              self.__max_peak)
 
+            
+
         context.set_operator(cairo.OPERATOR_OVER)
-        context.set_source_surface(self.our_surface, self._surface_x, 0)
+        context.set_source_surface(self.__surface, 0, 0)
+
+
         context.paint()
+
+        context.set_source_rgb(1.0, 1.0, 1.0)
+        context.set_line_width(0.5)
+
+        for marker in self.__markers:
+            x = marker * width
+            context.move_to(x, 0)
+            context.line_to(x, height)
+
+        context.stroke()
+
+    def set_markers(self, markers):
+        self.__markers = markers
 
 class EchonestExtension(BaseExtension):
     EXTENSION_NAME = 'echonest-extension'
@@ -61,6 +82,9 @@ class EchonestExtension(BaseExtension):
         BaseExtension.__init__(self, app)
         self.__asset_menu_item = None
         self.__analysis_handler_id = 0
+        self.__audio_previewer = None
+        self.__current_builder = None
+        self.__current_track = None
 
     def setup(self):
         self.app.gui.medialibrary.connect('populating-asset-menu',
@@ -74,7 +98,6 @@ class EchonestExtension(BaseExtension):
         filename = os.path.join(cache_dir, filename)
         try:
             with open(filename, 'rb') as f:
-                print ("I'm loading from cache !")
                 return pickle.load(f)
         except IOError:
             return None
@@ -87,14 +110,15 @@ class EchonestExtension(BaseExtension):
             pickle.dump(track, f)
 
     def analysis_worker(self, filename, callback, user_data):
-        pytrack = self.__load_from_cache(filename)
-        if not pytrack:
-            pytrack = track.track_from_filename(filename)
-            pytrack.get_analysis()
-            self.__save_to_cache(filename, pytrack)
+        track = self.__load_from_cache(filename)
+
+        if not track:
+            track = echotrack.track_from_filename(filename)
+            track.get_analysis()
+            self.__save_to_cache(filename, track)
 
         if (callback):
-            callback(pytrack, *user_data)
+            callback(track, *user_data)
 
     def __analyse_track(self, filename, callback, user_data):
         t = threading.Thread(target=self.analysis_worker, args=(filename,
@@ -108,8 +132,8 @@ class EchonestExtension(BaseExtension):
                 self.__clip_dialog_cb, clip)
         menu.append(menu_item)
 
-    def __fill_metadata_list(self, builder, track):
-        listbox = builder.get_object('metadata-list')
+    def __fill_metadata_list(self, track):
+        listbox = self.__current_builder.get_object('metadata-list')
         for name, value in sorted(track.__dict__.items()):
             if name in METADATA_BLACKLIST:
                 continue
@@ -129,29 +153,70 @@ class EchonestExtension(BaseExtension):
 
         listbox.show_all()
 
-    def __prepare_beat_matcher(self, builder, filename):
-        darea = builder.get_object('waveform_area')
-        self.audio_previewer = AudioPreviewer(darea, filename)
+    def __prepare_beat_matcher(self, track, filename):
+        darea = self.__current_builder.get_object('waveform_area')
+        self.__audio_previewer = AudioPreviewer(track, darea, filename)
         darea.get_style_context().add_class("AudioUriSource")
+        markers = [beat['start'] / track.duration for beat in track.beats]
+        self.__audio_previewer.set_markers(markers)
+
+        for id_ in ('range-combo', 'select-type-combo', 'distribution-combo',
+                'step-spinner'):
+            self.__current_builder.get_object(id_).set_sensitive(True)
+
+        self.__compute_markers()
 
     def __display_track_analysis(self, track, builder, filename):
-        self.__fill_metadata_list(builder, track)
-        self.__prepare_beat_matcher(builder, filename)
+        if builder != self.__current_builder:
+            return
+
+        self.__current_track = track
+        self.__fill_metadata_list(track)
+        self.__prepare_beat_matcher(track, filename)
+
+    def __compute_markers(self):
+        b = self.__current_builder
+        t = self.__current_track
+
+        range_ = b.get_object('range-combo').get_active_id()
+        selection_type = b.get_object('select-type-combo').get_active_id()
+        distribution = b.get_object('distribution-combo').get_active_id()
+        step = int(b.get_object('step-spinner').get_value())
+
+        if step == 1:
+            b.get_object('beat_label').set_text("beat")
+        else:
+            b.get_object('beat_label').set_text("beats")
+
+        if range_ == 'full':
+            markers = [m['start'] / t.duration for m in
+                    self.__current_track.beats[0::step]]
+        else:
+            markers = []
+
+        self.__audio_previewer.set_markers(markers)
+        self.__audio_previewer.darea.queue_draw()
+
+    def _matching_changed_cb(self, unused_widget):
+        self.__compute_markers()
 
     def __clip_dialog_cb(self, widget, clip):
         clip = clip.bClip
         filename = GLib.filename_from_uri(clip.props.uri)[0]
 
-        builder = Gtk.Builder()
-        builder.add_from_file(os.path.join(here, 'clip-dialog.ui'))
-        builder.connect_signals(self)
-        dialog = builder.get_object('clip-dialog')
+        self.__current_builder = Gtk.Builder()
+        self.__current_builder.add_from_file(os.path.join(here, 'clip-dialog.ui'))
+        self.__current_builder.connect_signals(self)
+        self.__current_builder.get_object('step-spinner').set_range(1, 100)
+        dialog = self.__current_builder.get_object('clip-dialog')
         dialog.set_transient_for(self.app.gui)
 
         self.__analyse_track(filename, self.__display_track_analysis,
-                (builder, filename))
+                (self.__current_builder, filename,))
 
         res = dialog.run()
+
+        self.__current_builder = None
 
         # We gud
         dialog.destroy()
