@@ -58,9 +58,10 @@ class ClapMixer(object):
         self.pipeline.pause()
         # nle isn't thread-safe below PAUSED
         self.pipeline.get_state(timeout=Gst.CLOCK_TIME_NONE)
+
         self.pipeline.simple_seek(0)
-        self.set_asset(None)
         self.set_positions(None)
+        self.set_asset(None)
 
     def __setup_claps(self):
         if self.__clap_layer is not None:
