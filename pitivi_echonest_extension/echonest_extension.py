@@ -36,8 +36,12 @@ class AudioPreviewer:
 
         self.darea = darea
 
-        with open(filename, "rb") as samples:
-            self.__peaks = pickle.load(samples)
+        try:
+            with open(filename, "rb") as samples:
+                self.__peaks = pickle.load(samples)
+        except IOError:
+            print ("THERE SHOULD BE A WAVEFORM YOU SHOULD HAVE WAITED")
+            self.__peaks = [42.22]
 
         self.__nb_peaks = len(self.__peaks)
         self.__max_peak = max(self.__peaks)
@@ -256,6 +260,24 @@ class EchonestExtension(BaseExtension):
         self.__audio_previewer.set_markers(markers)
         self.__audio_previewer.darea.queue_draw()
 
+    def __select_waveform_section(self):
+        startpos = max(0.0, min(self.__button1_motion_start,
+            self.__button1_motion_end))
+        endpos = min(1.0, max(self.__button1_motion_start,
+            self.__button1_motion_end))
+        self.__audio_previewer.set_selected_section(startpos, endpos)
+        self.__audio_previewer.darea.queue_draw()
+
+    def __add_markers_to_timeline(self, clip):
+        bTimeline = self.app.gui.timeline_ui.bTimeline
+        ip = clip.get_inpoint()
+        end = clip.get_duration() + ip
+        start = clip.get_start()
+        markers = [b * Gst.SECOND + start - ip for b in self.__selected_beats if
+                ip < b * Gst.SECOND < end]
+        bTimeline.add_snapping_points(markers)
+        self.app.gui.timeline_ui.ruler.queue_draw()
+
     def _match_spin_changed_cb(self, spinner):
         step = int(self.__current_builder.get_object('step-spinner').get_value())
 
@@ -289,13 +311,6 @@ class EchonestExtension(BaseExtension):
         self.__button1_motion_end = event.x / width
         self.__select_waveform_section()
 
-    def __select_waveform_section(self):
-        startpos = max(0.0, min(self.__button1_motion_start,
-            self.__button1_motion_end))
-        endpos = min(1.0, max(self.__button1_motion_start,
-            self.__button1_motion_end))
-        self.__audio_previewer.set_selected_section(startpos, endpos)
-        self.__audio_previewer.darea.queue_draw()
 
     def _waveform_area_button_release_cb(self, darea, event):
         position = event.x / darea.get_allocation().width
@@ -325,18 +340,20 @@ class EchonestExtension(BaseExtension):
                 (self.__current_builder, asset, filename,))
 
         res = dialog.run()
+        # We gud
+        dialog.destroy()
+
+        self.__add_markers_to_timeline(clip)
+
+        self.__clap_mixer.reset()
 
         for handler_id in self.__clap_mixer_handlers:
             GObject.signal_handler_disconnect(self.__clap_mixer.pipeline,
                     handler_id)
-        self.__clap_mixer_handlers = []
 
-        self.__clap_mixer.reset()
+        self.__clap_mixer_handlers = []
         self.__current_builder = None
         self.__selected_beats = None
-
-        # We gud
-        dialog.destroy()
 
     def __add_asset_menu_item_cb(self, medialibrary, model_row, menu):
         menu_item = Gtk.MenuItem.new_with_label("Run echonest analysis")
