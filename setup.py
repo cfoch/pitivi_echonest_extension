@@ -16,10 +16,10 @@ setup(
         '': ['*.ui'],
     },
     dependency_links = \
-            ['http://github.com/LuminosoInsight/ordered-set/tarball/master#egg=ordered_set-2.0.0',
+            ['http://github.com/LuminosoInsight/ordered-set/tarball/master#egg=ordered_set-2.0.1',
              'http://github.com/MathieuDuponchelle/pyechonest3/tarball/py3#egg=pyechonest-9.0.3'],
     install_requires = [
-        "ordered-set==2.0.0",
+        "ordered-set==2.0.1",
         "pyechonest==9.0.3",
     ],
 )
