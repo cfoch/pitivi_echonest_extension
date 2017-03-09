@@ -269,7 +269,7 @@ class EchonestExtension(BaseExtension):
         self.__audio_previewer.darea.queue_draw()
 
     def __add_markers_to_timeline(self, clip):
-        bTimeline = self.app.gui.timeline_ui.bTimeline
+        bTimeline = self.app.gui.timeline_ui.ges_timeline
         ip = clip.get_inpoint()
         end = clip.get_duration() + ip
         start = clip.get_start()
