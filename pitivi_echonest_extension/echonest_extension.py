@@ -325,7 +325,7 @@ class EchonestExtension(BaseExtension):
         self.__button1_motion_end = None
 
     def __clip_dialog_cb(self, widget, clip):
-        clip = clip.bClip
+        clip = clip.ges_clip
         asset = clip.get_asset()
         filename = GLib.filename_from_uri(clip.props.uri)[0]
 
